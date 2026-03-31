@@ -29,7 +29,7 @@ public class RankingManager implements Serializable {
             return Long.compare(a.getTimestamp(), b.getTimestamp());
         });
         if (entries.size() > 50) {
-            entries = entries.subList(0, 50);
+            entries = new ArrayList<>(entries.subList(0, 50));
         }
         saveToFile();
     }

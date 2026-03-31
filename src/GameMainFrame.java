@@ -7,16 +7,17 @@ public class GameMainFrame extends JFrame {
     private RankingPanel rankingPanel;
     private JLabel scoreLabel, lengthLabel, coinsLabel, nicknameLabel;
     private JButton restartButton;
+    private JComboBox<String> difficultyCombo;
     private String playerName;
 
-    public GameMainFrame(String playerName) {
+    public GameMainFrame(String playerName, int difficulty) {
         this.playerName = playerName;
         setTitle("贪吃蛇游戏 - 玩家: " + playerName);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
         setResizable(false);
 
-        // 1. 创建右侧面板及其所有组件（顺序重要）
+        // 1. 创建右侧面板
         JPanel rightPanel = new JPanel();
         rightPanel.setLayout(new BoxLayout(rightPanel, BoxLayout.Y_AXIS));
         rightPanel.setPreferredSize(new Dimension(220, 600));
@@ -38,6 +39,20 @@ public class GameMainFrame extends JFrame {
         lengthLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         coinsLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
+        // 难度选择组件
+        JPanel difficultyPanel = new JPanel();
+        difficultyPanel.setLayout(new BoxLayout(difficultyPanel, BoxLayout.X_AXIS));
+        difficultyPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        JLabel difficultyLabel = new JLabel("难度：");
+        difficultyLabel.setFont(infoFont);
+        String[] difficulties = {"慢速", "中速", "快速"};
+        difficultyCombo = new JComboBox<>(difficulties);
+        difficultyCombo.setFont(infoFont);
+        difficultyCombo.setSelectedIndex(difficulty);  // 设置为传入的难度
+        difficultyCombo.addActionListener(e -> changeDifficulty());
+        difficultyPanel.add(difficultyLabel);
+        difficultyPanel.add(difficultyCombo);
+
         rankingPanel = new RankingPanel();
         rankingPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
         rankingPanel.setBorder(BorderFactory.createTitledBorder("成绩排行榜"));
@@ -54,23 +69,23 @@ public class GameMainFrame extends JFrame {
         rightPanel.add(lengthLabel);
         rightPanel.add(Box.createVerticalStrut(5));
         rightPanel.add(coinsLabel);
+        rightPanel.add(Box.createVerticalStrut(10));
+        rightPanel.add(difficultyPanel);
         rightPanel.add(Box.createVerticalStrut(20));
         rightPanel.add(rankingPanel);
         rightPanel.add(Box.createVerticalStrut(15));
         rightPanel.add(restartButton);
         rightPanel.add(Box.createVerticalStrut(10));
 
-        // 2. 创建游戏面板（此时右侧组件已存在）
-        gamePanel = new GamePanel(this, playerName);
+        // 2. 创建游戏面板（传入难度）
+        gamePanel = new GamePanel(this, playerName, difficulty);
 
-        // 3. 添加按钮监听器（在 gamePanel 创建之后）
+        // 3. 按钮监听器
         restartButton.addActionListener(e -> {
             gamePanel.resetGame();
-            // 重置后立即将焦点还给游戏面板
             gamePanel.requestFocusInWindow();
         });
 
-        // 4. 将面板添加到窗口
         add(gamePanel, BorderLayout.CENTER);
         add(rightPanel, BorderLayout.EAST);
 
@@ -78,7 +93,7 @@ public class GameMainFrame extends JFrame {
         setLocationRelativeTo(null);
         setVisible(true);
 
-        // 5. 设置焦点策略：确保游戏面板是第一个获得焦点的组件
+        // 焦点管理
         setFocusTraversalPolicy(new FocusTraversalPolicy() {
             @Override
             public Component getComponentAfter(Container aContainer, Component aComponent) {
@@ -102,7 +117,6 @@ public class GameMainFrame extends JFrame {
             }
         });
 
-        // 6. 窗口激活时，强制将焦点还给游戏面板
         addWindowFocusListener(new WindowAdapter() {
             @Override
             public void windowGainedFocus(WindowEvent e) {
@@ -110,8 +124,14 @@ public class GameMainFrame extends JFrame {
             }
         });
 
-        // 7. 延迟请求焦点，确保窗口完全显示后焦点生效
         SwingUtilities.invokeLater(() -> gamePanel.requestFocusInWindow());
+    }
+
+    // 改变难度
+    private void changeDifficulty() {
+        int selected = difficultyCombo.getSelectedIndex();
+        gamePanel.setSpeed(selected);
+        gamePanel.requestFocusInWindow();
     }
 
     public void updateGameInfo(int score, int length, int coins) {
@@ -127,4 +147,4 @@ public class GameMainFrame extends JFrame {
     public String getPlayerName() {
         return playerName;
     }
-}  
+}

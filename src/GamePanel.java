@@ -1,38 +1,79 @@
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.awt.image.BufferedImage;
 import java.util.LinkedList;
 import java.util.Random;
+import java.util.HashMap;
+import java.util.Map;
 
 public class GamePanel extends JPanel implements ActionListener, KeyListener {
+    // 常量
     private static final int BOARD_WIDTH = 600;
     private static final int BOARD_HEIGHT = 600;
     private static final int UNIT_SIZE = 25;
     private static final int GAME_UNITS = (BOARD_WIDTH * BOARD_HEIGHT) / (UNIT_SIZE * UNIT_SIZE);
-    private static final int DELAY = 100;
     private static final int REVIVE_COST = 5;
-    private static final int COIN_GEN_DELAY = 5000; // 金币生成间隔（毫秒）
+    private static final int COIN_GEN_DELAY = 5000;
+    private static final int SPEED_SLOW = 150;
+    private static final int SPEED_NORMAL = 100;
+    private static final int SPEED_FAST = 70;
+    private static final int INVINCIBLE_DURATION = 5000;
+    private static final int STONE_GEN_INTERVAL = 15000;
+    private static final int STONE_LIFE = 10000;
+    private static final int MIN_STONES_PER_BATCH = 3;
+    private static final int MAX_STONES_PER_BATCH = 6;
+    private static final int MAX_STONES_TOTAL = 20;
+    private static final int CARNIVAL_DURATION = 2000;
+    private static final float CARNIVAL_FOOD_RATIO = 0.1f;
 
+    // 游戏状态
     private boolean isRunning = true;
     private boolean isDead = false;
     private Timer timer;
     private Timer coinTimer;
+    private Timer invincibleTimer;
+    private Timer carnivalTimer;
     private int score = 0;
     private int coins = 0;
     private int bodyLength = 3;
-    private int deadLength = 0; // 死亡时的长度，用于复活时恢复长度
+    private int deadLength = 0;
+    private int currentDelay = SPEED_NORMAL;
+    private boolean isInvincible = false;
+    private boolean isCarnival = false;
 
+    // 蛇
     private final LinkedList<Point> snake = new LinkedList<>();
     private char direction = 'R';
     private char nextDirection = 'R';
-    private Point food;
+
+    // 食物列表
+    private final LinkedList<Point> foods = new LinkedList<>();
     private Point coin;
     private boolean hasCoin = false;
+
+    // 石头
+    private final LinkedList<Point> stones = new LinkedList<>();
+    private final Map<Point, Long> stoneBirthTime = new HashMap<>();
+
+    // 无敌道具
+    private Point invincibleItem;
+    private boolean hasInvincibleItem = false;
+
     private final Random random = new Random();
     private final GameMainFrame parentFrame;
+    private final GameAssets assets;   // 图片资源
 
-    public GamePanel(GameMainFrame parent, String playerName) {
+    // 构造函数
+    public GamePanel(GameMainFrame parent, String playerName, int speedLevel) {
         this.parentFrame = parent;
+        this.assets = new GameAssets(); // 生成图片资源
+        switch (speedLevel) {
+            case 0: currentDelay = SPEED_SLOW; break;
+            case 1: currentDelay = SPEED_NORMAL; break;
+            case 2: currentDelay = SPEED_FAST; break;
+            default: currentDelay = SPEED_NORMAL;
+        }
         setPreferredSize(new Dimension(BOARD_WIDTH, BOARD_HEIGHT));
         setBackground(Color.black);
         setFocusable(true);
@@ -41,11 +82,25 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         initGame();
         startGame();
         startCoinGenerator();
+        startStoneGenerator();
+        startInvincibleItemGenerator();
     }
 
-    // 初始化游戏数据（全新开始）
+    // ---------- 游戏初始化 ----------
     public void initGame() {
         snake.clear();
+        foods.clear();
+        stones.clear();
+        stoneBirthTime.clear();
+        hasCoin = false;
+        coin = null;
+        hasInvincibleItem = false;
+        invincibleItem = null;
+        isInvincible = false;
+        isCarnival = false;
+        if (invincibleTimer != null) invincibleTimer.stop();
+        if (carnivalTimer != null) carnivalTimer.stop();
+
         int startX = BOARD_WIDTH / 2 / UNIT_SIZE * UNIT_SIZE;
         int startY = BOARD_HEIGHT / 2 / UNIT_SIZE * UNIT_SIZE;
         snake.add(new Point(startX, startY));
@@ -59,33 +114,34 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         deadLength = 0;
         updateInfoDisplay();
         generateFood();
-        // 初始不生成金币，等定时器生成
-        hasCoin = false;
-        coin = null;
         isRunning = true;
         isDead = false;
-        if (timer != null && timer.isRunning()) {
-            timer.stop();
-        }
+        if (timer != null && timer.isRunning()) timer.stop();
     }
 
     private void startGame() {
-        if (timer != null) {
-            timer.stop();
-        }
-        timer = new Timer(DELAY, this);
+        if (timer != null) timer.stop();
+        timer = new Timer(currentDelay, this);
         timer.start();
     }
 
-    // 金币生成器（独立定时器）
-    private void startCoinGenerator() {
-        if (coinTimer != null && coinTimer.isRunning()) {
-            coinTimer.stop();
+    public void setSpeed(int speedLevel) {
+        switch (speedLevel) {
+            case 0: currentDelay = SPEED_SLOW; break;
+            case 1: currentDelay = SPEED_NORMAL; break;
+            case 2: currentDelay = SPEED_FAST; break;
+            default: currentDelay = SPEED_NORMAL;
         }
+        if (timer != null && isRunning && !isDead) {
+            timer.setDelay(currentDelay);
+        }
+    }
+
+    // ---------- 金币生成 ----------
+    private void startCoinGenerator() {
+        if (coinTimer != null && coinTimer.isRunning()) coinTimer.stop();
         coinTimer = new Timer(COIN_GEN_DELAY, e -> {
-            if (isRunning && !hasCoin && !isDead) {
-                generateCoin();
-            }
+            if (isRunning && !hasCoin && !isDead) generateCoin();
         });
         coinTimer.start();
     }
@@ -97,7 +153,8 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             int x = random.nextInt(BOARD_WIDTH / UNIT_SIZE) * UNIT_SIZE;
             int y = random.nextInt(BOARD_HEIGHT / UNIT_SIZE) * UNIT_SIZE;
             Point newCoin = new Point(x, y);
-            if (!snake.contains(newCoin) && (food == null || !newCoin.equals(food))) {
+            if (!snake.contains(newCoin) && !foods.contains(newCoin) && !stones.contains(newCoin) &&
+                    (invincibleItem == null || !newCoin.equals(invincibleItem))) {
                 coin = newCoin;
                 hasCoin = true;
                 repaint();
@@ -106,6 +163,152 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
     }
 
+    // ---------- 石头生成（批量，每个存活10秒）----------
+    private void startStoneGenerator() {
+        Timer stoneGenTimer = new Timer(STONE_GEN_INTERVAL, e -> {
+            if (isRunning && !isDead) {
+                int numToGenerate = MIN_STONES_PER_BATCH + random.nextInt(MAX_STONES_PER_BATCH - MIN_STONES_PER_BATCH + 1);
+                if (stones.size() >= MAX_STONES_TOTAL) return;
+                int generated = 0;
+                int attempts = 0;
+                while (generated < numToGenerate && attempts < 1000 && stones.size() < MAX_STONES_TOTAL) {
+                    int x = random.nextInt(BOARD_WIDTH / UNIT_SIZE) * UNIT_SIZE;
+                    int y = random.nextInt(BOARD_HEIGHT / UNIT_SIZE) * UNIT_SIZE;
+                    Point newStone = new Point(x, y);
+                    if (!snake.contains(newStone) && !foods.contains(newStone) &&
+                            (coin == null || !newStone.equals(coin)) && !stones.contains(newStone) &&
+                            (invincibleItem == null || !newStone.equals(invincibleItem))) {
+                        stones.add(newStone);
+                        stoneBirthTime.put(newStone, System.currentTimeMillis());
+                        generated++;
+                    }
+                    attempts++;
+                }
+                repaint();
+            }
+        });
+        stoneGenTimer.start();
+
+        // 石头消失检查
+        Timer stoneLifetimeChecker = new Timer(500, e -> {
+            long now = System.currentTimeMillis();
+            boolean removed = false;
+            LinkedList<Point> toRemove = new LinkedList<>();
+            for (Point s : stones) {
+                Long birth = stoneBirthTime.get(s);
+                if (birth != null && (now - birth) >= STONE_LIFE) {
+                    toRemove.add(s);
+                    removed = true;
+                }
+            }
+            stones.removeAll(toRemove);
+            for (Point s : toRemove) stoneBirthTime.remove(s);
+            if (removed) repaint();
+        });
+        stoneLifetimeChecker.start();
+    }
+
+    // ---------- 无敌道具生成 ----------
+    private void startInvincibleItemGenerator() {
+        Timer invincibleGenTimer = new Timer(15000, e -> {
+            if (isRunning && !isDead && !hasInvincibleItem) {
+                generateInvincibleItem();
+            }
+        });
+        invincibleGenTimer.start();
+    }
+
+    private void generateInvincibleItem() {
+        int maxAttempts = 1000;
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            int x = random.nextInt(BOARD_WIDTH / UNIT_SIZE) * UNIT_SIZE;
+            int y = random.nextInt(BOARD_HEIGHT / UNIT_SIZE) * UNIT_SIZE;
+            Point newItem = new Point(x, y);
+            if (!snake.contains(newItem) && !foods.contains(newItem) &&
+                    (coin == null || !newItem.equals(coin)) && !stones.contains(newItem)) {
+                invincibleItem = newItem;
+                hasInvincibleItem = true;
+                repaint();
+                return;
+            }
+        }
+    }
+
+    // ---------- 食物生成（多食物支持）----------
+    private void generateFood() {
+        generateFood(1);
+    }
+
+    private void generateFood(int count) {
+        int totalCells = GAME_UNITS;
+        if (snake.size() >= totalCells) {
+            gameOver();
+            return;
+        }
+        int generated = 0;
+        int attempts = 0;
+        while (generated < count && attempts < 2000) {
+            int x = random.nextInt(BOARD_WIDTH / UNIT_SIZE) * UNIT_SIZE;
+            int y = random.nextInt(BOARD_HEIGHT / UNIT_SIZE) * UNIT_SIZE;
+            Point newFood = new Point(x, y);
+            if (!snake.contains(newFood) && !foods.contains(newFood) &&
+                    (coin == null || !newFood.equals(coin)) && !stones.contains(newFood) &&
+                    (invincibleItem == null || !newFood.equals(invincibleItem))) {
+                foods.add(newFood);
+                generated++;
+            }
+            attempts++;
+        }
+        repaint();
+    }
+
+    // ---------- 狂欢时刻 ----------
+    private void startCarnival() {
+        if (isCarnival) return;
+        isCarnival = true;
+        foods.clear();
+        int totalCells = GAME_UNITS;
+        int targetFoodCount = (int) (totalCells * CARNIVAL_FOOD_RATIO);
+        int generated = 0;
+        int attempts = 0;
+        while (generated < targetFoodCount && attempts < 10000) {
+            int x = random.nextInt(BOARD_WIDTH / UNIT_SIZE) * UNIT_SIZE;
+            int y = random.nextInt(BOARD_HEIGHT / UNIT_SIZE) * UNIT_SIZE;
+            Point newFood = new Point(x, y);
+            if (!snake.contains(newFood) && !foods.contains(newFood) &&
+                    (coin == null || !newFood.equals(coin)) && !stones.contains(newFood) &&
+                    (invincibleItem == null || !newFood.equals(invincibleItem))) {
+                foods.add(newFood);
+                generated++;
+            }
+            attempts++;
+        }
+        if (carnivalTimer != null) carnivalTimer.stop();
+        carnivalTimer = new Timer(CARNIVAL_DURATION, e -> endCarnival());
+        carnivalTimer.setRepeats(false);
+        carnivalTimer.start();
+        repaint();
+    }
+
+    private void endCarnival() {
+        isCarnival = false;
+        if (!foods.isEmpty()) {
+            Point oneFood = foods.getFirst();
+            foods.clear();
+            foods.add(oneFood);
+        } else {
+            generateFood();
+        }
+        repaint();
+    }
+
+    private void checkCarnival() {
+        if (!isCarnival && snake.size() >= 20) {
+            startCarnival();
+        }
+    }
+
+    // ---------- 游戏流程控制 ----------
     public void resetGame() {
         initGame();
         startGame();
@@ -113,43 +316,34 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         requestFocusInWindow();
     }
 
-    // 复活：消耗金币，保留长度、分数、金币，重置蛇的位置到中央（长度不变）
     private void attemptRevive() {
         if (coins >= REVIVE_COST) {
-            coins -= REVIVE_COST;           // 消耗金币
-            // 保存当前得分和长度（死亡时已保存长度 deadLength）
+            coins -= REVIVE_COST;
             int savedScore = score;
             int savedCoins = coins;
-            // 根据死亡时的长度重新生成蛇（位置中央，长度不变）
             snake.clear();
             int startX = BOARD_WIDTH / 2 / UNIT_SIZE * UNIT_SIZE;
             int startY = BOARD_HEIGHT / 2 / UNIT_SIZE * UNIT_SIZE;
             for (int i = 0; i < deadLength; i++) {
                 snake.add(new Point(startX - i * UNIT_SIZE, startY));
             }
-            // 恢复分数、金币、长度显示
             score = savedScore;
             coins = savedCoins;
             bodyLength = snake.size();
             direction = 'R';
             nextDirection = 'R';
             updateInfoDisplay();
-
-            // 重新生成食物（确保不与蛇重叠）
             generateFood();
-            // 如果有金币存在则保留，否则重新生成
             if (hasCoin && coin != null && snake.contains(coin)) {
                 hasCoin = false;
                 coin = null;
-                generateCoin(); // 立即重新生成一个
+                generateCoin();
             }
-
             isDead = false;
             isRunning = true;
             startGame();
             repaint();
         } else {
-            // 金币不足，游戏结束
             isRunning = false;
             isDead = false;
             RankingManager.getInstance().addScore(parentFrame.getPlayerName(), score);
@@ -168,23 +362,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         repaint();
     }
 
-    private void generateFood() {
-        int totalCells = (BOARD_WIDTH / UNIT_SIZE) * (BOARD_HEIGHT / UNIT_SIZE);
-        if (snake.size() >= totalCells) {
-            gameOver();
-            return;
-        }
-        while (true) {
-            int x = random.nextInt(BOARD_WIDTH / UNIT_SIZE) * UNIT_SIZE;
-            int y = random.nextInt(BOARD_HEIGHT / UNIT_SIZE) * UNIT_SIZE;
-            Point newFood = new Point(x, y);
-            if (!snake.contains(newFood) && (!hasCoin || !newFood.equals(coin))) {
-                food = newFood;
-                break;
-            }
-        }
-    }
-
+    // ---------- 移动逻辑 ----------
     private void move() {
         direction = nextDirection;
         Point head = snake.getFirst();
@@ -198,28 +376,64 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
         Point newHead = new Point(newX, newY);
 
-        boolean ateFood = newHead.equals(food);
+        // 检查食物
+        boolean ateFood = false;
+        Point eatenFood = null;
+        for (Point f : foods) {
+            if (newHead.equals(f)) {
+                ateFood = true;
+                eatenFood = f;
+                break;
+            }
+        }
         boolean ateCoin = hasCoin && newHead.equals(coin);
+        boolean ateInvincible = hasInvincibleItem && newHead.equals(invincibleItem);
+        boolean hitStone = false;
+        for (Point s : stones) {
+            if (newHead.equals(s)) {
+                hitStone = true;
+                break;
+            }
+        }
 
         // 移动蛇身
         snake.addFirst(newHead);
         if (!ateFood) {
             snake.removeLast();
         } else {
-            // 吃到食物：增加得分，长度增加
             score++;
             bodyLength = snake.size();
             updateInfoDisplay();
-            generateFood();
+            foods.remove(eatenFood);
+            if (isCarnival) {
+                int target = (int) (GAME_UNITS * CARNIVAL_FOOD_RATIO);
+                if (foods.size() < target) {
+                    generateFood(1);
+                }
+            } else {
+                generateFood();
+            }
         }
 
         if (ateCoin) {
-            // 吃到金币：增加金币数量，移除金币
             coins++;
             hasCoin = false;
             coin = null;
             updateInfoDisplay();
-            // 不用重新生成，等待下次定时器生成
+        }
+
+        if (ateInvincible) {
+            isInvincible = true;
+            hasInvincibleItem = false;
+            invincibleItem = null;
+            if (invincibleTimer != null) invincibleTimer.stop();
+            invincibleTimer = new Timer(INVINCIBLE_DURATION, e -> {
+                isInvincible = false;
+                invincibleTimer = null;
+            });
+            invincibleTimer.setRepeats(false);
+            invincibleTimer.start();
+            repaint();
         }
 
         // 碰撞检测
@@ -233,10 +447,12 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 break;
             }
         }
+        if (hitStone && !isInvincible) {
+            hit = true;
+        }
 
         if (hit) {
-            // 死亡：记录当前长度
-            deadLength = snake.size();
+            deadLength = snake.size() - 1;
             isRunning = false;
             isDead = true;
             if (timer != null) timer.stop();
@@ -253,7 +469,14 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             return;
         }
 
-        // 胜利条件
+        // 如果无敌且撞到石头，移除该石头
+        if (hitStone && isInvincible) {
+            stones.removeIf(s -> s.equals(newHead));
+            stoneBirthTime.remove(newHead);
+        }
+
+        checkCarnival();
+
         if (snake.size() == GAME_UNITS) {
             gameOver();
         }
@@ -264,49 +487,76 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         parentFrame.updateGameInfo(score, bodyLength, coins);
     }
 
+    // ---------- 绘制 ----------
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
-        drawGrid(g);
-        drawFood(g);
+        BufferedImage bg = assets.getBackgroundImage();
+        if (bg != null) {
+            g.drawImage(bg, 0, 0, BOARD_WIDTH, BOARD_HEIGHT, this);
+        } else {
+            g.setColor(Color.black);
+            g.fillRect(0, 0, BOARD_WIDTH, BOARD_HEIGHT);
+        }
+        drawFoods(g);
         drawCoin(g);
+        drawStones(g);
+        drawInvincibleItem(g);
         drawSnake(g);
         drawGameStatus(g);
+        drawEffects(g);
     }
 
-    private void drawGrid(Graphics g) {
-        g.setColor(Color.DARK_GRAY);
-        for (int i = 0; i <= BOARD_WIDTH / UNIT_SIZE; i++) {
-            g.drawLine(i * UNIT_SIZE, 0, i * UNIT_SIZE, BOARD_HEIGHT);
-            g.drawLine(0, i * UNIT_SIZE, BOARD_WIDTH, i * UNIT_SIZE);
-        }
-    }
-
-    private void drawFood(Graphics g) {
-        if (food != null) {
-            g.setColor(Color.RED);
-            g.fillOval(food.x, food.y, UNIT_SIZE, UNIT_SIZE);
+    private void drawFoods(Graphics g) {
+        BufferedImage foodImg = assets.getFoodImage();
+        for (Point f : foods) {
+            if (foodImg != null) {
+                g.drawImage(foodImg, f.x, f.y, UNIT_SIZE, UNIT_SIZE, this);
+            }
         }
     }
 
     private void drawCoin(Graphics g) {
         if (hasCoin && coin != null) {
-            g.setColor(Color.YELLOW);
-            g.fillOval(coin.x, coin.y, UNIT_SIZE, UNIT_SIZE);
-            g.setColor(Color.ORANGE);
-            g.drawOval(coin.x, coin.y, UNIT_SIZE, UNIT_SIZE);
+            BufferedImage coinImg = assets.getCoinImage();
+            if (coinImg != null) {
+                g.drawImage(coinImg, coin.x, coin.y, UNIT_SIZE, UNIT_SIZE, this);
+            }
+        }
+    }
+
+    private void drawStones(Graphics g) {
+        BufferedImage stoneImg = assets.getStoneImage();
+        for (Point s : stones) {
+            if (stoneImg != null) {
+                g.drawImage(stoneImg, s.x, s.y, UNIT_SIZE, UNIT_SIZE, this);
+            }
+        }
+    }
+
+    private void drawInvincibleItem(Graphics g) {
+        if (hasInvincibleItem && invincibleItem != null) {
+            BufferedImage invImg = assets.getInvincibleItemImage();
+            if (invImg != null) {
+                g.drawImage(invImg, invincibleItem.x, invincibleItem.y, UNIT_SIZE, UNIT_SIZE, this);
+            }
         }
     }
 
     private void drawSnake(Graphics g) {
+        BufferedImage headImg = assets.getSnakeHeadImage();
+        BufferedImage bodyImg = assets.getSnakeBodyImage();
         for (int i = 0; i < snake.size(); i++) {
             Point p = snake.get(i);
             if (i == 0) {
-                g.setColor(Color.GREEN);
+                if (headImg != null) {
+                    g.drawImage(headImg, p.x, p.y, UNIT_SIZE, UNIT_SIZE, this);
+                }
             } else {
-                g.setColor(new Color(45, 180, 0));
+                if (bodyImg != null) {
+                    g.drawImage(bodyImg, p.x, p.y, UNIT_SIZE, UNIT_SIZE, this);
+                }
             }
-            g.fillRect(p.x, p.y, UNIT_SIZE, UNIT_SIZE);
             g.setColor(Color.BLACK);
             g.drawRect(p.x, p.y, UNIT_SIZE, UNIT_SIZE);
         }
@@ -322,11 +572,22 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
     }
 
+    private void drawEffects(Graphics g) {
+        g.setFont(new Font("Arial", Font.BOLD, 14));
+        if (isInvincible) {
+            g.setColor(Color.MAGENTA);
+            g.drawString("无敌状态!", 10, 30);
+        }
+        if (isCarnival) {
+            g.setColor(Color.ORANGE);
+            g.drawString("狂欢时刻!", 10, 55);
+        }
+    }
+
+    // ---------- 事件处理 ----------
     @Override
     public void actionPerformed(ActionEvent e) {
-        if (isRunning) {
-            move();
-        }
+        if (isRunning) move();
         repaint();
     }
 
