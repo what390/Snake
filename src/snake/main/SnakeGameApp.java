@@ -1,3 +1,5 @@
+package snake.main;
+
 import javax.swing.*;
 
 public class SnakeGameApp {

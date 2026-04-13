@@ -1,3 +1,5 @@
+package snake.game;
+
 import java.awt.*;
 import java.awt.image.BufferedImage;
 

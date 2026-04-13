@@ -1,3 +1,5 @@
+package snake.ranking;
+
 import javax.swing.*;
 import java.awt.*;
 import java.util.List;

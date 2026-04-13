@@ -1,3 +1,5 @@
+package snake.ranking;
+
 import java.io.Serializable;
 
 public class RankEntry implements Serializable {
