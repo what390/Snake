@@ -1,6 +1,6 @@
 package snake.game;
 
-import java.awt.*;
+import java.awt.Point;
 import java.util.LinkedList;
 import java.util.Random;
 
@@ -9,18 +9,18 @@ public class AISnake {
     private char direction;
     private char nextDirection;
     private final Random random = new Random();
-    private final GamePanel gamePanel;
+    private final GameState state;
     private int aggression;
     private int hp;
     private int maxHp;
 
-    public AISnake(GamePanel panel, Point startHead, int initialLength, int difficulty) {
-        this.gamePanel = panel;
+    public AISnake(GameState state, Point startHead, int initialLength, int difficulty) {
+        this.state = state;
         this.aggression = difficulty;
         body = new LinkedList<>();
         body.add(startHead);
         for (int i = 1; i < initialLength; i++) {
-            body.add(new Point(startHead.x - i * GamePanel.UNIT_SIZE, startHead.y));
+            body.add(new Point(startHead.x - i * GameState.UNIT_SIZE, startHead.y));
         }
         direction = 'R';
         nextDirection = 'R';
@@ -33,19 +33,15 @@ public class AISnake {
     public Point getHead() { return body.getFirst(); }
     public int getHp() { return hp; }
     public int getMaxHp() { return maxHp; }
-
-    public void takeDamage(int amount) {
-        hp -= amount;
-        if (hp < 0) hp = 0;
-    }
+    public void takeDamage(int amount) { hp -= amount; if (hp < 0) hp = 0; }
 
     public void decideDirection() {
         LinkedList<Point> targets = new LinkedList<>();
-        targets.addAll(gamePanel.getFoods());
-        targets.addAll(gamePanel.getMiniFoods());
-        if (gamePanel.hasCoin() && gamePanel.getCoin() != null) targets.add(gamePanel.getCoin());
+        targets.addAll(state.getFoods());
+        targets.addAll(state.getMiniFoods());
+        if (state.hasCoin() && state.getCoin() != null) targets.add(state.getCoin());
 
-        Point playerHead = gamePanel.getSnake().getFirst();
+        Point playerHead = state.getSnake().getFirst();
         Point head = getHead();
         int bestScore = -1;
         char bestDir = direction;
@@ -55,13 +51,13 @@ public class AISnake {
                     (direction == 'L' && d == 'R') || (direction == 'R' && d == 'L')) continue;
             int newX = head.x, newY = head.y;
             switch (d) {
-                case 'U': newY -= GamePanel.UNIT_SIZE; break;
-                case 'D': newY += GamePanel.UNIT_SIZE; break;
-                case 'L': newX -= GamePanel.UNIT_SIZE; break;
-                case 'R': newX += GamePanel.UNIT_SIZE; break;
+                case 'U': newY -= GameState.UNIT_SIZE; break;
+                case 'D': newY += GameState.UNIT_SIZE; break;
+                case 'L': newX -= GameState.UNIT_SIZE; break;
+                case 'R': newX += GameState.UNIT_SIZE; break;
             }
-            if (newX < 0 || newX >= GamePanel.BOARD_WIDTH || newY < 0 || newY >= GamePanel.BOARD_HEIGHT) continue;
-            if (!gamePanel.isValidMoveForAI(newX, newY, this)) continue;
+            if (newX < 0 || newX >= GameState.BOARD_WIDTH || newY < 0 || newY >= GameState.BOARD_HEIGHT) continue;
+            if (!isValidMove(newX, newY)) continue;
 
             double foodScore = 0;
             if (!targets.isEmpty()) {
@@ -85,11 +81,24 @@ public class AISnake {
                 bestDir = d;
             }
         }
-        if (bestScore != -1) {
-            nextDirection = bestDir;
-        } else {
-            randomDirection();
+        if (bestScore != -1) nextDirection = bestDir;
+        else randomDirection();
+    }
+
+    private boolean isValidMove(int x, int y) {
+        Point newHead = new Point(x, y);
+        if (state.getStones().contains(newHead)) return false;
+        if (state.getSnake().contains(newHead)) return false;
+        for (AISnake other : state.getAiSnakes()) {
+            if (other == this) {
+                for (int i = 1; i < other.getBody().size(); i++) {
+                    if (other.getBody().get(i).equals(newHead)) return false;
+                }
+            } else {
+                if (other.getBody().contains(newHead)) return false;
+            }
         }
+        return true;
     }
 
     private void randomDirection() {
@@ -101,21 +110,17 @@ public class AISnake {
                     (direction == 'L' && d == 'R') || (direction == 'R' && d == 'L')) continue;
             int newX = head.x, newY = head.y;
             switch (d) {
-                case 'U': newY -= GamePanel.UNIT_SIZE; break;
-                case 'D': newY += GamePanel.UNIT_SIZE; break;
-                case 'L': newX -= GamePanel.UNIT_SIZE; break;
-                case 'R': newX += GamePanel.UNIT_SIZE; break;
+                case 'U': newY -= GameState.UNIT_SIZE; break;
+                case 'D': newY += GameState.UNIT_SIZE; break;
+                case 'L': newX -= GameState.UNIT_SIZE; break;
+                case 'R': newX += GameState.UNIT_SIZE; break;
             }
-            if (newX >= 0 && newX < GamePanel.BOARD_WIDTH && newY >= 0 && newY < GamePanel.BOARD_HEIGHT &&
-                    gamePanel.isValidMoveForAI(newX, newY, this)) {
+            if (newX >= 0 && newX < GameState.BOARD_WIDTH && newY >= 0 && newY < GameState.BOARD_HEIGHT && isValidMove(newX, newY)) {
                 valid.add(d);
             }
         }
-        if (!valid.isEmpty()) {
-            nextDirection = valid.get(random.nextInt(valid.size()));
-        } else {
-            nextDirection = direction;
-        }
+        if (!valid.isEmpty()) nextDirection = valid.get(random.nextInt(valid.size()));
+        else nextDirection = direction;
     }
 
     public void move() {
@@ -123,13 +128,12 @@ public class AISnake {
         Point head = getHead();
         int newX = head.x, newY = head.y;
         switch (direction) {
-            case 'U': newY -= GamePanel.UNIT_SIZE; break;
-            case 'D': newY += GamePanel.UNIT_SIZE; break;
-            case 'L': newX -= GamePanel.UNIT_SIZE; break;
-            case 'R': newX += GamePanel.UNIT_SIZE; break;
+            case 'U': newY -= GameState.UNIT_SIZE; break;
+            case 'D': newY += GameState.UNIT_SIZE; break;
+            case 'L': newX -= GameState.UNIT_SIZE; break;
+            case 'R': newX += GameState.UNIT_SIZE; break;
         }
-        if (newX < 0 || newX >= GamePanel.BOARD_WIDTH || newY < 0 || newY >= GamePanel.BOARD_HEIGHT) {
-            // 边界死亡，将由 GamePanel 处理
+        if (newX < 0 || newX >= GameState.BOARD_WIDTH || newY < 0 || newY >= GameState.BOARD_HEIGHT) {
             body.addFirst(new Point(newX, newY));
             return;
         }
@@ -137,31 +141,22 @@ public class AISnake {
 
         boolean ateFood = false;
         Point eatenFood = null;
-        for (Point f : gamePanel.getFoods()) {
-            if (newHead.equals(f)) {
-                ateFood = true;
-                eatenFood = f;
-                break;
-            }
+        for (Point f : state.getFoods()) {
+            if (newHead.equals(f)) { ateFood = true; eatenFood = f; break; }
         }
-        boolean ateMiniFood = false;
+        boolean ateMini = false;
         Point eatenMini = null;
-        for (Point mf : gamePanel.getMiniFoods()) {
-            if (newHead.equals(mf)) {
-                ateMiniFood = true;
-                eatenMini = mf;
-                break;
-            }
+        for (Point mf : state.getMiniFoods()) {
+            if (newHead.equals(mf)) { ateMini = true; eatenMini = mf; break; }
         }
-        boolean ateCoin = gamePanel.hasCoin() && newHead.equals(gamePanel.getCoin());
+        boolean ateCoin = state.hasCoin() && newHead.equals(state.getCoin());
 
         body.addFirst(newHead);
-        if (!ateFood && !ateMiniFood) {
-            body.removeLast();
-        } else {
-            if (ateFood) gamePanel.removeFood(eatenFood);
-            else if (ateMiniFood) gamePanel.removeMiniFood(eatenMini);
+        if (!ateFood && !ateMini) body.removeLast();
+        else {
+            if (ateFood) state.getFoods().remove(eatenFood);
+            else if (ateMini) state.getMiniFoods().remove(eatenMini);
         }
-        if (ateCoin) gamePanel.removeCoin();
+        if (ateCoin) state.setHasCoin(false);
     }
 }
