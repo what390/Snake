@@ -39,6 +39,8 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         aiManager.initAISnakes();
         for (int i = 0; i < GameState.NORMAL_FOOD_MAX; i++) itemGenerator.generateOneFood();
         updateInfoDisplay();
+        // 使用正确的相对路径（项目根目录下的 res 文件夹）
+        SoundManager.getInstance().playBackgroundMusic("res/bgm.wav");
     }
 
     private void startGame() {
@@ -155,7 +157,16 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             logic.movePlayer();
             if (logic.checkPlayerCollision()) damagePlayer(1);
             aiManager.updateAndMove();
-            // 狂欢时刻处理
+            // 注意：这里不要调用音效，音效已在 GameLogic 中的 eatCoin 处调用
+            // 狂欢时刻动态维持食物数量（每帧检查，若少于目标则补充）
+            if (state.isCarnival()) {
+                int target = (int)(GameState.GAME_UNITS * GameState.CARNIVAL_FOOD_RATIO);
+                while (state.getFoods().size() < target) {
+                    itemGenerator.generateOneFood();
+                }
+            }
+
+            // 触发狂欢时刻（蛇长达到20时）
             if (!state.isCarnival() && state.getSnake().size() >= 20) {
                 state.setCarnival(true);
                 state.getFoods().clear();
@@ -166,6 +177,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 carnivalTimer.setRepeats(false);
                 carnivalTimer.start();
             }
+
             if (state.getSnake().size() == GameState.GAME_UNITS) gameOver();
         }
         repaint();

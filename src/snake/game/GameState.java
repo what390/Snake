@@ -23,7 +23,7 @@ public class GameState {
     public static final int MAX_STONES_PER_BATCH = 6;
     public static final int MAX_STONES_TOTAL = 20;
     public static final int CARNIVAL_DURATION = 2000;
-    public static final float CARNIVAL_FOOD_RATIO = 0.1f;
+    public static final float CARNIVAL_FOOD_RATIO = 0.04f;
     public static final int NORMAL_FOOD_MAX = 3;
     public static final int NORMAL_FOOD_GEN_DELAY = 3000;
     public static final int PLAYER_MAX_HEALTH = 5;
@@ -101,7 +101,7 @@ public class GameState {
         isInvincible = false;
         isCarnival = false;
         miniFoodEatenCount = 0;
-
+        SoundManager.getInstance().playBackgroundMusic();   // 无参，内部使用 res/bgm.wav
         int startX = BOARD_WIDTH / 2 / UNIT_SIZE * UNIT_SIZE;
         int startY = BOARD_HEIGHT / 2 / UNIT_SIZE * UNIT_SIZE;
         snake.add(new Point(startX, startY));
